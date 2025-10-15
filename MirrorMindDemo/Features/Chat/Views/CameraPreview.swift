@@ -109,7 +109,7 @@ struct CameraPreview: View {
             .cornerRadius(12)
             .clipped()
         }
-        .onChange(of: isCameraActive) { newValue in
+        .onChange(of: isCameraActive) { oldValue, newValue in
             if newValue && cameraService.isAuthorized {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     cameraService.startCamera()

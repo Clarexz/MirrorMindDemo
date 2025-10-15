@@ -3,17 +3,20 @@
 //  MirrorMindDemo
 //
 //  Created by Demo Firebase Chat Lead on 21/08/25.
+//  Modified by Emotion API Lead on 01/09/25.
 //
 
 import Foundation
 import Combine
 
 /// Servicio para conexión REAL con Firebase Realtime Database
-/// Lee el estado emocional desde: Emociones/estadoActual
+/// Lee y ESCRIBE el estado emocional desde/hacia: Emociones/estadoActual
 class EmotionFirebaseService: ObservableObject {
     @Published var currentEmotion: String = ""
     @Published var isSystemOn: Bool = false
     @Published var isConnected: Bool = false
+    @Published var lastWriteTimestamp: Date?
+    @Published var writeError: String?
     
     private var cancellables = Set<AnyCancellable>()
     private let databaseURL = "https://emociones-8d92c-default-rtdb.firebaseio.com"
@@ -156,4 +159,105 @@ class EmotionFirebaseService: ObservableObject {
     func hasValidData() -> Bool {
         return isSystemOn && !currentEmotion.isEmpty
     }
+    
+    // MARK: - Emotion Writing Methods
+    
+    /// Escribe una emoción detectada a Firebase
+    func writeEmotion(_ emotion: String, confidence: Double, description: String) {
+        // Preparar datos para escribir
+        let emotionData: [String: Any] = [
+            "emotion": emotion,
+            "confidence": confidence,
+            "description": description,
+            "timestamp": ServerValue.timestamp,
+            "source": "api_recognition"
+        ]
+        
+        // URLs para escritura
+        let emotionURL = URL(string: "\(databaseURL)/Emociones/estadoActual.json")!
+        let historyURL = URL(string: "\(databaseURL)/Emociones/historial.json")!
+        
+        // Escribir emoción actual
+        writeToFirebase(url: emotionURL, data: description) { [weak self] success in
+            if success {
+                print("✅ Firebase: Emoción actualizada - \(description)")
+                DispatchQueue.main.async {
+                    self?.lastWriteTimestamp = Date()
+                    self?.writeError = nil
+                }
+                
+                // También agregar al historial
+                self?.appendToHistory(url: historyURL, data: emotionData)
+            } else {
+                DispatchQueue.main.async {
+                    self?.writeError = "Error escribiendo emoción actual"
+                }
+            }
+        }
+    }
+    
+    /// Escribe datos a Firebase usando PUT
+    private func writeToFirebase(url: URL, data: Any, completion: @escaping (Bool) -> Void) {
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        do {
+            let jsonData: Data
+            if let stringData = data as? String {
+                // Para strings simples, enviar como string JSON
+                jsonData = try JSONSerialization.data(withJSONObject: stringData)
+            } else {
+                // Para objetos complejos
+                jsonData = try JSONSerialization.data(withJSONObject: data)
+            }
+            
+            request.httpBody = jsonData
+            
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    print("❌ Firebase Write Error: \(error.localizedDescription)")
+                    completion(false)
+                    return
+                }
+                
+                if let httpResponse = response as? HTTPURLResponse,
+                   httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                    completion(true)
+                } else {
+                    print("❌ Firebase Write HTTP Error: \(response.debugDescription)")
+                    completion(false)
+                }
+            }.resume()
+            
+        } catch {
+            print("❌ Firebase JSON Serialization Error: \(error)")
+            completion(false)
+        }
+    }
+    
+    /// Agrega entrada al historial de emociones
+    private func appendToHistory(url: URL, data: [String: Any]) {
+        // Generar timestamp único para la clave
+        let timestamp = Int(Date().timeIntervalSince1970 * 1000)
+        let historyEntryURL = URL(string: "\(url.absoluteString.replacingOccurrences(of: ".json", with: ""))/\(timestamp).json")!
+        
+        writeToFirebase(url: historyEntryURL, data: data) { success in
+            if success {
+                print("✅ Firebase: Entrada agregada al historial")
+            } else {
+                print("❌ Firebase: Error agregando al historial")
+            }
+        }
+    }
+    
+    /// Verifica si la escritura está funcionando correctamente
+    func getWriteStatus() -> (isWorking: Bool, lastWrite: Date?, error: String?) {
+        return (writeError == nil, lastWriteTimestamp, writeError)
+    }
+}
+
+// MARK: - Firebase ServerValue Helper
+private enum ServerValue {
+    static let timestamp: [String: String] = [".sv": "timestamp"]
 }

@@ -56,41 +56,8 @@ struct ChatView: View {
                         })
                     }
                     
-                    // Conexión SmartBand - Centrado
-                    HStack {
-                        Spacer()
-                        
-                        Button(action: {
-                            chatViewModel.toggleSmartband()
-                        }) {
-                            HStack(spacing: 12) {
-                                Image(systemName: chatViewModel.isSmartbandConnected ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 16, weight: .medium))
-                                
-                                Text(chatViewModel.isSmartbandConnected ? "Smartband conectada" : "Conectar smartband")
-                                    .font(.system(size: 16, weight: .medium))
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 12)
-                            .background(Color.Primary.brand)
-                            .foregroundColor(.white)
-                            .cornerRadius(DesignConstants.Radius.button)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        
-                        Spacer()
-                    }
-                    .padding(.horizontal, DesignConstants.Spacing.containerPadding)
-                    
-                    // Display biométrico mock
-                    VStack(spacing: 16) {
-                        Text("Datos biométricos")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(Color.Text.primary)
-                        
-                        BiometricDisplayMock(chatViewModel: chatViewModel)
-                    }
-                    .padding(.horizontal, DesignConstants.Spacing.containerPadding)
+                    // Tarjeta de SmartBand (mismo componente que Inicio)
+                    SmartBandCard(biometricManager: chatViewModel.biometricManager)
                     
                     // Sugerencias de video basadas en emoción Firebase
                     VStack(spacing: 16) {
@@ -151,54 +118,117 @@ struct ChatView: View {
             chatViewModel.getSuggestions()
         }
     }
+    
+    // Helper functions eliminadas - ahora usa BiometricDashboardView directamente
 }
 
-// MARK: - BiometricDisplayMock
-struct BiometricDisplayMock: View {
-    @ObservedObject var chatViewModel: ChatViewModel
+// MARK: - SmartBandCard
+struct SmartBandCard: View {
+    @ObservedObject var biometricManager: BiometricManager
     
     var body: some View {
-        HStack(spacing: 20) {
-            // Heart Rate
-            VStack(spacing: 8) {
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(.red)
+        VStack(spacing: 16) {
+            // Banner de conexión
+            HStack {
+                Circle()
+                    .fill(connectionStatusColor)
+                    .frame(width: 12, height: 12)
                 
-                Text(chatViewModel.getFormattedBiometrics().heartRate)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(Color.Text.primary)
+                Text(biometricManager.connectionStatus.rawValue)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
                 
-                Text("Frecuencia")
-                    .font(.system(size: 12))
-                    .foregroundColor(Color.Text.secondary)
+                Spacer()
+                
+                if biometricManager.isActive, let stats = biometricManager.getCurrentSessionStats() {
+                    Text(formatDuration(stats.duration))
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.white)
-            .cornerRadius(DesignConstants.Radius.card)
-            .shadow(color: DesignConstants.Shadow.card, radius: 4, x: 0, y: 2)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(connectionStatusColor.opacity(0.1))
+            .cornerRadius(20)
             
-            // Stress Level
-            VStack(spacing: 8) {
-                Image(systemName: "brain.head.profile")
-                    .font(.system(size: 24))
-                    .foregroundColor(.orange)
-                
-                Text(chatViewModel.getFormattedBiometrics().stress)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(Color.Text.primary)
-                
-                Text("Estrés")
-                    .font(.system(size: 12))
-                    .foregroundColor(Color.Text.secondary)
+            // Botón de conectar/desconectar
+            Button(action: {
+                biometricManager.toggleSession()
+            }) {
+                HStack {
+                    Image(systemName: biometricManager.isActive ? "stop.circle.fill" : "play.circle.fill")
+                    Text(biometricManager.isActive ? "Stop Session" : "Start Session")
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(biometricManager.isActive ? Color.red : Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(12)
             }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.white)
-            .cornerRadius(DesignConstants.Radius.card)
-            .shadow(color: DesignConstants.Shadow.card, radius: 4, x: 0, y: 2)
+            
+            // Datos en tiempo real si está conectado
+            if biometricManager.isActive, let currentData = biometricManager.currentBiometricData {
+                HStack(spacing: 16) {
+                    // Heart Rate Card
+                    VStack(spacing: 8) {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(.red)
+                        
+                        Text(currentData.validHeartRate ? "\(Int(currentData.heartRate)) BPM" : "Calculating...")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        Text("Heart Rate")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                    
+                    // Temperature Card
+                    VStack(spacing: 8) {
+                        Image(systemName: "thermometer")
+                            .font(.system(size: 24))
+                            .foregroundColor(.orange)
+                        
+                        Text(currentData.formattedTemperature)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        Text("Temperature")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                }
+            }
         }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+        .padding(.horizontal)
+    }
+    
+    private var connectionStatusColor: Color {
+        switch biometricManager.connectionStatus {
+        case .disconnected: return .red
+        case .scanning: return .orange
+        case .connecting: return .yellow
+        case .connected: return .green
+        }
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
